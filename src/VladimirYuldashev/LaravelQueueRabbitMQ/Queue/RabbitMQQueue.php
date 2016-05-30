@@ -123,6 +123,14 @@ class RabbitMQQueue extends Queue implements QueueContract
 	}
 
     /**
+     * @return boolean
+     */
+    public function isConnected()
+    {
+        return $this->connection->isConnected();
+    }
+
+    /**
      * @return AMQPChannel
      */
     public function reconnect()
