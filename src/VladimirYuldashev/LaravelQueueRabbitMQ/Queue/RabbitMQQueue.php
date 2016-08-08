@@ -123,6 +123,22 @@ class RabbitMQQueue extends Queue implements QueueContract
 		return null;
 	}
 
+    /**
+     * @return boolean
+     */
+    public function isConnected()
+    {
+        return $this->connection->isConnected();
+    }
+    /**
+     * @return AMQPChannel
+     */
+    public function reconnect()
+    {
+        $this->connection->reconnect();
+        $this->channel = $this->getChannel();
+    }
+
 	/**
 	 * @param string $queue
 	 *
