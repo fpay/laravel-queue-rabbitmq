@@ -5,8 +5,6 @@ namespace VladimirYuldashev\LaravelQueueRabbitMQ\Queue\Jobs;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Queue\Job as JobContract;
 use Illuminate\Queue\Jobs\Job;
-use PhpAmqpLib\Channel\AMQPChannel;
-use PhpAmqpLib\Message\AMQPMessage;
 use VladimirYuldashev\LaravelQueueRabbitMQ\Queue\RabbitMQQueue;
 
 class RabbitMQJob extends Job implements JobContract
@@ -20,9 +18,9 @@ class RabbitMQJob extends Job implements JobContract
 	public function __construct(
 		Container $container,
 		RabbitMQQueue $connection,
-		AMQPChannel $channel,
+		\AMQPChannel $channel,
 		$queue,
-		AMQPMessage $message
+		\AMQPEnvelope $message
 	)
 	{
 		$this->container = $container;
@@ -39,7 +37,7 @@ class RabbitMQJob extends Job implements JobContract
 	 */
 	public function fire()
 	{
-		$this->resolveAndFire(json_decode($this->message->body, true));
+		$this->resolveAndFire(json_decode($this->message->getBody(), true));
 	}
 
 	/**
@@ -49,7 +47,7 @@ class RabbitMQJob extends Job implements JobContract
 	 */
 	public function getRawBody()
 	{
-		return $this->message->body;
+		return $this->message->getBody();
 	}
 
 	/**
@@ -61,7 +59,7 @@ class RabbitMQJob extends Job implements JobContract
 	{
 		parent::delete();
 
-		$this->channel->basic_ack($this->message->delivery_info['delivery_tag']);
+		$this->connection->queue->ack($this->message->getDeliveryTag());
 	}
 
 	/**
@@ -85,7 +83,7 @@ class RabbitMQJob extends Job implements JobContract
 	{
 		$this->delete();
 
-		$body = $this->message->body;
+		$body = $this->message->getBody();
 		$body = json_decode($body, true);
 
 		$attempts = $this->attempts();
@@ -110,7 +108,7 @@ class RabbitMQJob extends Job implements JobContract
 	 */
 	public function attempts()
 	{
-		$body = json_decode($this->message->body, true);
+		$body = json_decode($this->message->getBody(), true);
 
 		return isset($body['data']['attempts']) ? (int)$body['data']['attempts'] : 0;
 	}
@@ -122,7 +120,7 @@ class RabbitMQJob extends Job implements JobContract
 	 */
 	public function getJobId()
 	{
-		return $this->message->get('correlation_id');
+		return $this->message->getCorrelationId();
 	}
 
 }

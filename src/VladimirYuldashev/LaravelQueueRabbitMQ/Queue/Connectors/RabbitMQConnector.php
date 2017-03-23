@@ -3,7 +3,6 @@
 namespace VladimirYuldashev\LaravelQueueRabbitMQ\Queue\Connectors;
 
 use Illuminate\Queue\Connectors\ConnectorInterface;
-use PhpAmqpLib\Connection\AMQPConnection;
 use VladimirYuldashev\LaravelQueueRabbitMQ\Queue\RabbitMQQueue;
 
 class RabbitMQConnector implements ConnectorInterface
@@ -24,7 +23,7 @@ class RabbitMQConnector implements ConnectorInterface
     public function connect(array $config)
     {
         // create connection with AMQP
-        $this->connection = new AMQPConnection($config['host'], $config['port'], $config['login'], $config['password'], $config['vhost']);
+        $this->connection = new \AMQPConnection($config);
 
         return new RabbitMQQueue(
             $this->connection,

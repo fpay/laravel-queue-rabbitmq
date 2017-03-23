@@ -5,10 +5,10 @@ namespace VladimirYuldashev\LaravelQueueRabbitMQ\Queue;
 use DateTime;
 use Illuminate\Contracts\Queue\Queue as QueueContract;
 use Illuminate\Queue\Queue;
-use PhpAmqpLib\Channel\AMQPChannel;
-use PhpAmqpLib\Connection\AMQPConnection;
-use PhpAmqpLib\Message\AMQPMessage;
-use PhpAmqpLib\Wire\AMQPTable;
+//use PhpAmqpLib\Channel\AMQPChannel;
+//use PhpAmqpLib\Connection\AMQPConnection;
+//use PhpAmqpLib\Message\AMQPMessage;
+//use PhpAmqpLib\Wire\AMQPTable;
 use VladimirYuldashev\LaravelQueueRabbitMQ\Queue\Jobs\RabbitMQJob;
 
 class RabbitMQQueue extends Queue implements QueueContract
@@ -16,6 +16,9 @@ class RabbitMQQueue extends Queue implements QueueContract
 
 	protected $connection;
 	protected $channel;
+    protected $exchange;
+    protected $queue;
+    protected $messageCount;
 
 	protected $declareExchange;
 	protected $declareBindQueue;
@@ -23,13 +26,26 @@ class RabbitMQQueue extends Queue implements QueueContract
 	protected $defaultQueue;
 	protected $configQueue;
 	protected $configExchange;
+    protected $persistent;
 
 	/**
 	 * @param AMQPConnection $amqpConnection
 	 * @param array          $config
 	 */
-	public function __construct(AMQPConnection $amqpConnection, $config)
+	public function __construct(\AMQPConnection $amqpConnection, $config)
 	{
+        // default set persistent for connection type 
+        if (isset($config['persistent'])) {
+            $this->persistent = $config['persistent'];
+        } else {
+            $this->persistent = true;
+        }
+        if ($this->persistent) {
+            $amqpConnection->pconnect();
+        } else {
+            $amqpConnection->connect();
+        }
+
 		$this->connection = $amqpConnection;
 		$this->defaultQueue = $config['queue'];
 		$this->configQueue = $config['queue_params'];
@@ -72,13 +88,13 @@ class RabbitMQQueue extends Queue implements QueueContract
 		}
 
 		// push job to a queue
-		$message = new AMQPMessage($payload, [
-			'Content-Type'  => 'application/json',
-			'delivery_mode' => 2,
-		]);
+		$attributes = [
+			'content_type'  => 'application/json',
+			'delivery_mode' => AMQP_DURABLE,
+		];
 
 		// push task to a queue
-		$this->channel->basic_publish($message, $queue, $queue);
+		$this->exchange->publish($payload, $queue, AMQP_NOPARAM, $attributes);
 
 		return true;
 	}
@@ -113,9 +129,9 @@ class RabbitMQQueue extends Queue implements QueueContract
 		$this->declareQueue($queue);
 
 		// get envelope
-		$message = $this->channel->basic_get($queue);
+		$message = $this->queue->get();
 
-		if ($message instanceof AMQPMessage) {
+		if ($message instanceof \AMQPEnvelope) {
 			return new RabbitMQJob($this->container, $this, $this->channel, $queue, $message);
 		}
 
@@ -135,7 +151,11 @@ class RabbitMQQueue extends Queue implements QueueContract
      */
     public function reconnect()
     {
-        $this->connection->reconnect();
+        if ($this->persistent) {
+            $this->connection->preconnect();
+        } else {
+            $this->connection->reconnect();
+        }
         $this->channel = $this->getChannel();
     }
 
@@ -154,7 +174,7 @@ class RabbitMQQueue extends Queue implements QueueContract
 	 */
 	private function getChannel()
 	{
-		return $this->connection->channel();
+		return new \AMQPChannel($this->connection);
 	}
 
 	/**
@@ -166,27 +186,29 @@ class RabbitMQQueue extends Queue implements QueueContract
 
 		if ($this->declareExchange) {
 			// declare exchange
-			$this->channel->exchange_declare(
-				$name,
-				$this->configExchange['type'],
-				$this->configExchange['passive'],
-				$this->configExchange['durable'],
-				$this->configExchange['auto_delete']
-			);
+			$exFlags = $this->configExchange['durable'] ? AMQP_DURABLE : AMQP_NOPARAM;
+            $this->exchange = new \AMQPExchange($this->channel);
+            $this->exchange->setName($name); 
+            $this->exchange->setType($this->configExchange['type']);
+            $this->exchange->setFlags($exFlags);
+			$this->exchange->setArgument('passive', $this->configExchange['passive']);
+			$this->exchange->setArgument('auto_delete', $this->configExchange['auto_delete']);
+            $this->exchange->declareExchange();
 		}
 
 		if ($this->declareBindQueue) {
 			// declare queue
-			$this->channel->queue_declare(
-				$name,
-				$this->configQueue['passive'],
-				$this->configQueue['durable'],
-				$this->configQueue['exclusive'],
-				$this->configQueue['auto_delete']
-			);
+            $quFlags = $this->configQueue['durable'] ? AMQP_DURABLE : AMQP_NOPARAM;
+            $this->queue = new \AMQPQueue($this->channel);
+            $this->queue->setName($name);
+            $this->queue->setFlags($quFlags);
+            $this->queue->setArgument('passive', $this->configQueue['passive']);
+            $this->queue->setArgument('auto_delete', $this->configQueue['auto_delete']);
+            $this->queue->setArgument('exclusive', $this->configQueue['exclusive']);
+            $this->messageCount = $this->queue->declareQueue();
 
 			// bind queue to the exchange
-			$this->channel->queue_bind($name, $name, $name);
+            $this->queue->bind($name, $name);
 		}
 	}
 
@@ -202,32 +224,34 @@ class RabbitMQQueue extends Queue implements QueueContract
 		$destination = $this->getQueueName($destination);
 		$name = $this->getQueueName($destination) . '_deferred_' . $delay;
 
-		// declare exchange
-		$this->channel->exchange_declare(
-			$name,
-			$this->configExchange['type'],
-			$this->configExchange['passive'],
-			$this->configExchange['durable'],
-			$this->configExchange['auto_delete']
-		);
+        // declare exchange
+        $exFlags = $this->configExchange['durable'] ? AMQP_DURABLE : AMQP_NOPARAM;
+        $this->exchange = new \AMQPExchange($this->channel);
+        $this->exchange->setName($name); 
+        $this->exchange->setType($this->configExchange['type']);
+        $this->exchange->setFlags($exFlags);
+        $this->exchange->setArgument('passive', $this->configExchange['passive']);
+        $this->exchange->setArgument('auto_delete', $this->configExchange['auto_delete']);
+        $this->exchange->declareExchange();
 
-		// declare queue
-		$this->channel->queue_declare(
-			$name,
-			$this->configQueue['passive'],
-			$this->configQueue['durable'],
-			$this->configQueue['exclusive'],
-			$this->configQueue['auto_delete'],
-			false,
-			new AMQPTable([
-				'x-dead-letter-exchange'    => $destination,
-				'x-dead-letter-routing-key' => $destination,
-				'x-message-ttl'             => $delay * 1000,
-			])
-		);
+        // declare queue
+        $quFlags = $this->configQueue['durable'] ? AMQP_DURABLE : AMQP_NOPARAM;
+        $this->queue = new \AMQPQueue($this->channel);
+        $this->queue->setName($name);
+        $this->queue->setFlags($quFlags);
+        $quArguments = array(
+            'passive'                   => $this->configQueue['passive'],
+            'auto_delete'               => $this->configQueue['auto_delete'],
+            'exclusive'                 => $this->configQueue['exclusive'],
+            'x-dead-letter-exchange'    => $destination,
+            'x-dead-letter-routing-key' => $destination,
+            'x-message-ttl'             => $delay * 1000,
+        );
+        $this->queue->setArguments($quArguments);
+        $this->messageCount = $this->queue->declareQueue();
 
-		// bind queue to the exchange
-		$this->channel->queue_bind($name, $name, $name);
+        // bind queue to the exchange
+        $this->queue->bind($name, $name);
 
 		return $name;
 	}
