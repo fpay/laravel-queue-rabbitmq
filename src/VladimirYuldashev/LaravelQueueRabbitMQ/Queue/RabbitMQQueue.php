@@ -256,4 +256,8 @@ class RabbitMQQueue extends Queue implements QueueContract
 		return $name;
 	}
 
+    public function getQueue()
+    {
+        return $this->queue;
+    }
 }

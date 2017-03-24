@@ -59,7 +59,7 @@ class RabbitMQJob extends Job implements JobContract
 	{
 		parent::delete();
 
-		$this->connection->queue->ack($this->message->getDeliveryTag());
+		$this->connection->getQueue()->ack($this->message->getDeliveryTag());
 	}
 
 	/**
