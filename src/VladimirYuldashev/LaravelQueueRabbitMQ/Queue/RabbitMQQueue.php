@@ -5,10 +5,6 @@ namespace VladimirYuldashev\LaravelQueueRabbitMQ\Queue;
 use DateTime;
 use Illuminate\Contracts\Queue\Queue as QueueContract;
 use Illuminate\Queue\Queue;
-//use PhpAmqpLib\Channel\AMQPChannel;
-//use PhpAmqpLib\Connection\AMQPConnection;
-//use PhpAmqpLib\Message\AMQPMessage;
-//use PhpAmqpLib\Wire\AMQPTable;
 use VladimirYuldashev\LaravelQueueRabbitMQ\Queue\Jobs\RabbitMQJob;
 
 class RabbitMQQueue extends Queue implements QueueContract
